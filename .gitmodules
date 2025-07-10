@@ -1,0 +1,15 @@
+[submodule "lib/PsiHAL"]
+	path = lib/PsiHAL
+	url = https://github.com/Taragorm/PsiHAL.git
+[submodule "lib/PsiOutstation"]
+	path = lib/PsiOutstation
+	url = https://github.com/Taragorm/PsiOutstation.git
+[submodule "lib/PsiCore"]
+	path = lib/PsiCore
+	url = https://github.com/Taragorm/PsiCore.git
+[submodule "lib/PsiIot"]
+	path = lib/PsiIot
+	url = https://github.com/Taragorm/PsiIot.git
+[submodule "lib/PsiHX711"]
+	path = lib/PsiHX711
+	url = https://github.com/Taragorm/PsiHX711.git

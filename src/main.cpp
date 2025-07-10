@@ -14,6 +14,10 @@
 #include <clocks.h>
 #include <regutils.h>
 #include <PitSleep.h>
+#include <RFM69.h>         //get it here: https://www.github.com/lowpowerlab/rfm69
+#include <RFM69_ATC.h>     //get it here: https://www.github.com/lowpowerlab/rfm69
+//#include <hc12crc.h>
+
 
 const uint16_t MAJICK1 = 0xDEAD;
 const uint16_t MAJICK2 = 0xBEEF;
@@ -57,6 +61,15 @@ uint16_t flashCounter_;
 bool battLow_;
 bool scaleLow_;
 bool noSleep_;
+
+#if HAVE_RADIO
+    #ifdef ENABLE_ATC
+        RFM69_ATC radio_(Pins::RadioCS, Pins::RadioIrq, true);
+    #else
+        RFM69 radio_(Pins::RadioCS, Pins::RadioIrq, true );
+    #endif
+#endif
+
 
 static double  pollScale(bool print=true);
 static double getBattVolts(bool print=true);
@@ -127,19 +140,21 @@ void setup()
     pinMode(Pins::G, OUTPUT);
     pinMode(Pins::B, OUTPUT);
     pinMode(Pins::TARE, INPUT_PULLUP);
-    pinMode(Pins::SOUND, OUTPUT);
-    pinMode(Pins::SOUND_EN, OUTPUT);
-
+#if HAVE_RATE
+    pinMode(Pins::MX711_RATE, OUTPUT);
+#endif
     //Serial.swap();
     Serial.begin(115200);
-    Serial.print("\f");
+    delay(250);
+    Serial.print("\f*START*\r\n");
     
     for(int i=0; i<9; ++i)
     {
         leds(i);
-        delay(100);
+        delay(500);
     }
 
+    /*
     loadcell_.begin();
     EEPROM.get(EEPROM_ADDR, nvm_);
     if(nvm_.majick1 != MAJICK1 || nvm_.majick2 != MAJICK2)
@@ -147,7 +162,39 @@ void setup()
         resetFactors();
     }
     apply();
+    */
 
+#if HAVE_RADIO
+    bool ok = radio_.initialize(FREQUENCY, NODEID, NETWORKID);
+
+    #if SERIAL_TRACE
+    if(!ok)
+        Serial.println("Radio fail");
+    else
+        Serial.printf("\nRadio Init ok=%d freq=%d, node=%d, netid=%d\n ", ok, FREQUENCY, NODEID, NETWORKID);
+    #endif
+
+    #ifdef IS_RFM69HW_HCW
+    radio_.setHighPower(); //must include this only for RFM69HW/HCW!
+    #endif
+
+    #ifdef ENCRYPTKEY
+        #if SERIAL_TRACE
+    Serial.printf("Encrypt key=[%s]\n", ENCRYPTKEY);
+        #endif
+    radio_.encrypt(ENCRYPTKEY);
+#endif
+
+    //Auto Transmission Control - dials down transmit power to save battery (-100 is the noise floor, -90 is still pretty good)
+    //For indoor nodes that are pretty static and at pretty stable temperatures (like a MotionMote) -90dBm is quite safe
+    //For more variable nodes that can expect to move or experience larger temp drifts a lower margin like -70 to -80 would probably be better
+    //Always test your ATC mote in the edge cases in your own environment to ensure ATC will perform as you expect
+    #ifdef ENABLE_ATC
+    radio_.enableAutoPower(ATC_RSSI);
+    #endif
+#endif // HAVE_RADIO
+
+/*
     RtcControl::clockLP32k();
     _sleeper.setup();
     kick();
@@ -157,11 +204,16 @@ void setup()
     
     if( digitalReadFast(Pins::RX) == 0 )
         doSleep(); // start in sleep if no serial connected
-}
+ */
+
+ }
 //------------------------------------------------------------------------------------------
 // Add the main program code into the continuous loop() function
 void loop()
 {
+    leds(7);
+    Serial.print('X');
+/*    
     if(asleep_)
     {
         asleep();
@@ -170,7 +222,7 @@ void loop()
     {
         awake();
     }
-
+*/
 }
 //------------------------------------------------------------------------------------------
 /**
