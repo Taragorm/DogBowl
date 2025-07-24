@@ -16,7 +16,7 @@
 #include <PitSleep.h>
 #include <RFM69.h>         //get it here: https://www.github.com/lowpowerlab/rfm69
 #include <RFM69_ATC.h>     //get it here: https://www.github.com/lowpowerlab/rfm69
-//#include <hc12crc.h>
+#include <radio.h>
 
 
 const uint16_t MAJICK1 = 0xDEAD;
@@ -31,6 +31,8 @@ struct NVM
     uint16_t majick1;
     long zero;
     double scale;
+    double tare;
+    double alarm;
     uint16_t majick2;
 } nvm_;
 
@@ -50,10 +52,10 @@ MilliTimer _flashTimer(FLASHMS, false);
 MilliTimer _secondTimer(1000, true);
 
 const uint8_t TARECOUNT = 4;
-uint8_t _tareCounter;
-uint8_t _tareMode;
-uint8_t _poll;
-uint8_t _lastLeds;
+uint8_t tareCounter_;
+uint8_t tareMode_;
+uint8_t poll_;
+uint8_t lastLeds_;
 const uint16_t ASLEEPTICKS = 20;    ///< how many ticks before we check scales/batt
 const uint16_t AWAKETICKS  = 60;    ///< sec before we sleep after no activity
 uint16_t awaketicks_;
@@ -62,16 +64,12 @@ bool battLow_;
 bool scaleLow_;
 bool noSleep_;
 
-#if HAVE_RADIO
-    #ifdef ENABLE_ATC
-        RFM69_ATC radio_(Pins::RadioCS, Pins::RadioIrq, true);
-    #else
-        RFM69 radio_(Pins::RadioCS, Pins::RadioIrq, true );
-    #endif
-#endif
+const uint16_t MINSENDRATE = 90;
+uint16_t sendCounter_;
+double lastSendWeight_;
+const double WEIGHT_HYSTERESIS = 10.0;
 
-
-static double  pollScale(bool print=true);
+static double pollScale(bool print=true);
 static double getBattVolts(bool print=true);
 static void pollSerial();
 static void doCommand();
@@ -80,6 +78,7 @@ static void awake();
 static void doSleep();
 static void doWake();
 static void zero();
+static void tare();
 static void status();
 static void kick();
 
@@ -94,7 +93,7 @@ const uint8_t WHITE =3;
 //------------------------------------------------------------------------------------------
 static void leds(uint8_t c)
 {
-    _lastLeds = c;
+    lastLeds_ = c;
     c = ~c; // flip the bits
     digitalWriteFast(Pins::R, (c&1) != 0); // writeFast assumes 0/1 only
     digitalWriteFast(Pins::G, (c&2) != 0);
@@ -104,7 +103,7 @@ static void leds(uint8_t c)
 //------------------------------------------------------------------------------------------
 static uint8_t leds()
 {
-    return _lastLeds;
+    return lastLeds_;
 }
 //------------------------------------------------------------------------------------------
 void showPIT()
@@ -119,8 +118,10 @@ void showPIT()
 void resetFactors()
 {
     nvm_.majick1    = MAJICK1;
-    nvm_.zero     = 0;
+    nvm_.zero       = 0;
     nvm_.scale      = 1.0;
+    nvm_.tare       = 0;
+    nvm_.alarm      = 100.0;
     nvm_.majick2    = MAJICK2;
     EEPROM.put(EEPROM_ADDR, nvm_);    
 }    
@@ -135,7 +136,7 @@ void apply()
 void setup()
 {
 
-    analogReference(INTERNAL4V34);
+    analogReference(INTERNAL);
     pinMode(Pins::R, OUTPUT);
     pinMode(Pins::G, OUTPUT);
     pinMode(Pins::B, OUTPUT);
@@ -143,6 +144,9 @@ void setup()
 #if HAVE_RATE
     pinMode(Pins::MX711_RATE, OUTPUT);
 #endif
+    digitalWriteFast(Pins::POWER_SW, 1);
+    pinMode(Pins::POWER_SW, OUTPUT);
+
     //Serial.swap();
     Serial.begin(115200);
     delay(250);
@@ -154,75 +158,51 @@ void setup()
         delay(500);
     }
 
-    /*
     loadcell_.begin();
+
     EEPROM.get(EEPROM_ADDR, nvm_);
     if(nvm_.majick1 != MAJICK1 || nvm_.majick2 != MAJICK2)
     {
         resetFactors();
     }
     apply();
-    */
 
 #if HAVE_RADIO
-    bool ok = radio_.initialize(FREQUENCY, NODEID, NETWORKID);
-
-    #if SERIAL_TRACE
-    if(!ok)
-        Serial.println("Radio fail");
-    else
-        Serial.printf("\nRadio Init ok=%d freq=%d, node=%d, netid=%d\n ", ok, FREQUENCY, NODEID, NETWORKID);
-    #endif
-
-    #ifdef IS_RFM69HW_HCW
-    radio_.setHighPower(); //must include this only for RFM69HW/HCW!
-    #endif
-
-    #ifdef ENCRYPTKEY
-        #if SERIAL_TRACE
-    Serial.printf("Encrypt key=[%s]\n", ENCRYPTKEY);
-        #endif
-    radio_.encrypt(ENCRYPTKEY);
-#endif
-
-    //Auto Transmission Control - dials down transmit power to save battery (-100 is the noise floor, -90 is still pretty good)
-    //For indoor nodes that are pretty static and at pretty stable temperatures (like a MotionMote) -90dBm is quite safe
-    //For more variable nodes that can expect to move or experience larger temp drifts a lower margin like -70 to -80 would probably be better
-    //Always test your ATC mote in the edge cases in your own environment to ensure ATC will perform as you expect
-    #ifdef ENABLE_ATC
-    radio_.enableAutoPower(ATC_RSSI);
-    #endif
+    initRadio();
 #endif // HAVE_RADIO
 
-/*
+
     RtcControl::clockLP32k();
     _sleeper.setup();
     kick();
     status();
 
-    //showPIT();
+    showPIT();
     
-    if( digitalReadFast(Pins::RX) == 0 )
-        doSleep(); // start in sleep if no serial connected
- */
+    //if( digitalReadFast(Pins::RX) == 0 )
+    //    doSleep(); // start in sleep if no serial connected
+
+    doWake();
 
  }
 //------------------------------------------------------------------------------------------
 // Add the main program code into the continuous loop() function
 void loop()
 {
-    leds(7);
-    Serial.print('X');
-/*    
+    //leds(7);
+    //Serial.print('X');
+    
     if(asleep_)
     {
+        Serial.print('$');
         asleep();
     }
     else
     {
+        Serial.print('@');
         awake();
     }
-*/
+
 }
 //------------------------------------------------------------------------------------------
 /**
@@ -238,6 +218,7 @@ void loop()
  */
 void asleep()
 {
+    Serial.printf("%d", digitalReadFast(Pins::TARE));
     if(digitalReadFast(Pins::TARE)==0)
     {
         doWake();
@@ -251,14 +232,27 @@ void asleep()
             flashCounter_ = FLASHPERSAMPLE;
             loadcell_.power_up();
             delay(400);
-            long wt = pollScale(false);
+            double wt = pollScale(false);
             loadcell_.power_down();
 
-            scaleLow_ = (wt<0);
+            scaleLow_ = (wt< nvm_.alarm);
 
             auto v = getBattVolts(false);
             battLow_ = (v < 2.4);
             
+            //
+            // Now consider radio actions
+            if(sendCounter_==0
+                || abs(wt-lastSendWeight_) > WEIGHT_HYSTERESIS // we cal in grams
+                )
+            {
+                lastSendWeight_ = wt;
+                sendRadio(wt, v, battLow_);
+                sendCounter_ = MINSENDRATE-1;
+            }
+            else
+                --sendCounter_;
+
         }
         else
             --flashCounter_;
@@ -317,23 +311,23 @@ void awake()
             }            
         }
 
-        if(_poll)
+        if(poll_)
         {
             pollScale();
         }
 
-        switch(_tareMode)
+        switch(tareMode_)
         {
             case 0:
                 // Normal state
                 if(digitalReadFast(Pins::TARE)==0)
                 {
                     // pressed
-                    if(++_tareCounter>=TARECOUNT)
+                    if(++tareCounter_>=TARECOUNT)
                     {
                         kick();
-                        ++_tareMode;
-                        _tareCounter=0;
+                        ++tareMode_;
+                        tareCounter_=0;
                         leds(BLUE);
                     }
                     else
@@ -343,17 +337,17 @@ void awake()
                 }
                 else
                 {
-                    _tareCounter=0;
+                    tareCounter_=0;
                     leds(GREEN);
                 }
                 break;
 
             case 1:
                 // Pretare
-                if(++_tareCounter>=TARECOUNT)
+                if(++tareCounter_>=TARECOUNT)
                 {
                     kick();
-                    ++_tareMode;
+                    ++tareMode_;
                     leds(BLUE);
                 }
                 else
@@ -365,8 +359,8 @@ void awake()
             case 2:
                 leds(MAGENTA);
                 kick();
-                zero();
-                _tareMode = 0;
+                tare();
+                tareMode_ = 0;
                 break;
         }
 
@@ -380,8 +374,11 @@ void awake()
 //------------------------------------------------------------------------------------------
 void doSleep()
 {
+    Serial.print("Sleeping..\r\n");
+    
     leds(0);
     loadcell_.power_down();
+    digitalWriteFast(Pins::POWER_SW, 1);
     asleep_ = true;
     awaketicks_ = ASLEEPTICKS;
     flashCounter_ = 0;
@@ -390,9 +387,11 @@ void doSleep()
 //------------------------------------------------------------------------------------------
 void doWake()
 {
+    digitalWriteFast(Pins::POWER_SW, 0);
+    delay(5);
     asleep_ = false;
-    _tareCounter = 0;
-    _tareMode = 0;
+    tareCounter_ = 0;
+    tareMode_ = 0;
     noSleep_ = false;
     kick();
 }
@@ -402,17 +401,19 @@ double pollScale(bool print)
     loadcell_.power_up();
     if (loadcell_.wait_ready_timeout(1000))
     {
-        auto reading = loadcell_.gross(1);
+        auto reading = loadcell_.nett(1);
         if(print)
         {
+            Serial.printf("Abs:    %ld\r\n", loadcell_.absolute(1));
+            Serial.printf("Gross:  %g\r\n", loadcell_.gross(1));
+            Serial.printf("Nett:   %g\r\n", loadcell_.nett(1));
             Serial.printf("Weight: %g\r\n", reading);
         }
         return reading;
     }
     else
     {
-        if(print)
-            Serial.println("HX711 not found.");
+        Serial.println("HX711 not found.");
     }
     loadcell_.power_down();
     return 0;
@@ -447,7 +448,7 @@ void pollSerial()
 //------------------------------------------------------------------------------------------
 double getBattVolts(bool print)
 {
-    auto vbatt = analogRead(Pins::VBATT)*4.3/1023;
+    auto vbatt = analogRead(Pins::VBATT)*3.3/1023;
     if(print)
     {
         Serial.printf("VBatt =%fV\r\n", vbatt );
@@ -461,7 +462,8 @@ static void help()
         "c <wt> Calibrate\n"
         "p Toggle poll\n"
         "R reset\r\n"
-        "s Status\r\n"
+        "S Sleep\r\n"
+        "t Tare\r\n"
         "w Stay awake\r\n"
         "Z Zero scale\n"        
         "? Status\r\n"
@@ -475,6 +477,21 @@ void zero()
     Serial.printf("Zero= %ld\r\n", loadcell_.get_zero());
     loadcell_.power_down();
     nvm_.zero = loadcell_.get_zero();
+    EEPROM.put(EEPROM_ADDR, nvm_);
+}
+//------------------------------------------------------------------------------------------
+void tare()
+{
+    loadcell_.power_up();
+    loadcell_.tare();    
+    Serial.printf(
+                    "Zero= %ld Tare=%ld\r\n", 
+                    loadcell_.get_zero(), 
+                    loadcell_.get_tare()
+                    );
+
+    loadcell_.power_down();
+    nvm_.tare = loadcell_.get_tare();
     EEPROM.put(EEPROM_ADDR, nvm_);
 }
 //------------------------------------------------------------------------------------------
@@ -513,8 +530,8 @@ void doCommand()
             break;
             
         case 'p':
-            _poll ^= 1;
-            Serial.printf("Poll mode=%d\r\n", _poll);
+            poll_ ^= 1;
+            Serial.printf("Poll mode=%d\r\n", poll_);
             break;
 
         case 'R':
@@ -524,7 +541,7 @@ void doCommand()
             status();
             break;
             
-        case 's':
+        case 'S':
         Serial.println("Zzzz..");
             delay(500);
             doSleep();
@@ -553,9 +570,11 @@ void doCommand()
 void status()
 {
     Serial.printf(
-        "offs=%ld\r\nscale=%g\r\n",
+        "zero=%ld\r\nscale=%g\r\ntare=%g\r\nalarm=%f\r\n",
         nvm_.zero,
-        nvm_.scale
+        nvm_.scale,
+        nvm_.tare,
+        nvm_.alarm
         );
     getBattVolts();
     pollScale();

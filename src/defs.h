@@ -47,12 +47,30 @@
 
 #ifndef DEFS_H_
 #define DEFS_H_
+
 #include <Arduino.h>
 #include <stdint.h>
+#include <psiiot.h>
+#include <test-network.h>
 
-#define HAVE_RADIO 0
+#define HAVE_RADIO 1
 #define REPURPOSE_SOUND 1
 #define HAVE_RATE 1
+
+#define DB_UNIT 1
+
+#if DB_UNIT==1
+    #define ID_STRING "DB1"
+    #define NODEID DB1_NODEID
+#elif DB_UNIT==2
+    #define ID_STRING "DB2"
+    #define NODEID DB2_NODEID
+#endif
+
+
+const uint16_t IOT_ID_CODE = IOT_ID(ID_STRING[0],ID_STRING[1],ID_STRING[2]);
+
+
 namespace Pins
 {
     // PA0 is UDPI

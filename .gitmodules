@@ -13,3 +13,6 @@
 [submodule "lib/PsiHX711"]
 	path = lib/PsiHX711
 	url = https://github.com/Taragorm/PsiHX711.git
+[submodule "lib/PsiNetCred"]
+	path = lib/PsiNetCred
+	url = https://github.com/Taragorm/PsiNetCred.git
