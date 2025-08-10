@@ -16,3 +16,6 @@
 [submodule "lib/PsiNetCred"]
 	path = lib/PsiNetCred
 	url = https://github.com/Taragorm/PsiNetCred.git
+[submodule "lib/RFM69"]
+	path = lib/RFM69
+	url = https://github.com/Taragorm/RFM69.git

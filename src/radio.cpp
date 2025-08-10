@@ -22,16 +22,16 @@ static Buffer_t radioBuffer_;
 //---------------------------------------------------
 void initRadio()
 {
+    SPI.begin();
     bool ok = radio_.initialize(FREQUENCY, NODEID, NETWORKID);
-    if(!ok)
-        Serial.println("Radio fail");
+    Serial.printf("Radio Init Node:%d Net:%d -->  %s\r\n", NODEID, NETWORKID, ok ? "OK" : "FAILED");
 
 #if SERIAL_TRACE
     else
         Serial.printf("\nRadio Init ok=%d freq=%d, node=%d, netid=%d\n ", ok, FREQUENCY, NODEID, NETWORKID);
 #endif
 
-#ifdef IS_RFM69HW_HCW
+#if IS_RFM69HW_HCW
     radio_.setHighPower(); //must include this only for RFM69HW/HCW!
 #endif
 
@@ -42,22 +42,35 @@ void initRadio()
     radio_.encrypt(ENCRYPTKEY);
 #endif
 
+#ifdef RADIO_TX_POWER
+        radio_.setPowerLevel(RADIO_TX_POWER);
+#endif
+
     //Auto Transmission Control - dials down transmit power to save battery (-100 is the noise floor, -90 is still pretty good)
     //For indoor nodes that are pretty static and at pretty stable temperatures (like a MotionMote) -90dBm is quite safe
     //For more variable nodes that can expect to move or experience larger temp drifts a lower margin like -70 to -80 would probably be better
     //Always test your ATC mote in the edge cases in your own environment to ensure ATC will perform as you expect
 #ifdef ENABLE_ATC
-    radio_.enableAutoPower(ATC_RSSI);
+    //radio_.enableAutoPower(ATC_RSSI);
 #endif
 
-    radio_.setMode(RF69_MODE_RX);
-    //_buffer.encodeID
+    //radio_.readAllRegsCompact();
+    //radio_.sleep();
+}
+//---------------------------------------------------
+void sleepRadio()
+{
+    radio_.sleep();
 }
 //---------------------------------------------------
 void sendRadio(float wt, float volts, int8_t state)
 {
+    Serial.println("Radio init...");
+    initRadio();
+    Serial.println("Fill buffer");
+ 
     radioBuffer_.reset();
-    radioBuffer_.putID(IOT_ID_CODE);
+    radioBuffer_.putID(PACKET_SRC_ID);
 
     //
     // load stuff
@@ -68,10 +81,19 @@ void sendRadio(float wt, float volts, int8_t state)
     //
     // finalised & send
     radioBuffer_.finalise();
+
+    Serial.printf("Tx %d\r\n", radioBuffer_.writeSpaceUsed() );
+    radio_.setMode(RF69_MODE_TX);
+
+    Serial.println("Radio TX...");
     radio_.send(
                 GW_NODEID, 
                 radioBuffer_.buffer(),
                 radioBuffer_.writeSpaceUsed() 
                 );
+
+    Serial.println("  Done");
+    radio_.sleep();                
 }
+//---------------------------------------------------
 //---------------------------------------------------

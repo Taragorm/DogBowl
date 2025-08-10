@@ -51,24 +51,30 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include <psiiot.h>
-#include <test-network.h>
+//#include <test-network.h>
+#include <study-network.h>
 
 #define HAVE_RADIO 1
-#define REPURPOSE_SOUND 1
-#define HAVE_RATE 1
+#define USE_POWER_SW 1
 
 #define DB_UNIT 1
 
 #if DB_UNIT==1
-    #define ID_STRING "DB1"
+    #define ID_STRING "DBB"
     #define NODEID DB1_NODEID
+    #undef IS_RFM69HW_HCW
+    #define IS_RFM69HW_HCW 0
 #elif DB_UNIT==2
-    #define ID_STRING "DB2"
+    #define ID_STRING "DBK"
     #define NODEID DB2_NODEID
+    #undef IS_RFM69HW_HCW
+    #define IS_RFM69HW_HCW 0
 #endif
 
+#define RADIO_TX_POWER 29
+// #define ENABLE_ATC
 
-const uint16_t IOT_ID_CODE = IOT_ID(ID_STRING[0],ID_STRING[1],ID_STRING[2]);
+const uint16_t PACKET_SRC_ID = IOT_ID(ID_STRING[0],ID_STRING[1],ID_STRING[2]);
 
 
 namespace Pins
@@ -85,18 +91,14 @@ namespace Pins
     const uint8_t VBATT         = PIN_PA1;
     const uint8_t MX711_DOUT    = PIN_PA2;
     const uint8_t MX711_SCK     = PIN_PA3;
-#if HAVE_RATE    
-    const uint8_t MX711_RATE    = PIN_PA4; // should probably have been TARE
-#endif
+    const uint8_t TARE          = PIN_PA4;
     const uint8_t POWER_SW      = PIN_PA5;
-#if REPURPOSE_SOUND    
-    // A6 spare
-    const uint8_t TARE          = PIN_PA7;
-#endif
+    const uint8_t SOUND_ENABLE  = PIN_PA6;
+    const uint8_t SOUND         = PIN_PA7;
 
-    // C0 SCK
-    // C1 MISO
-    // C2 MOSI
+    const uint8_t SCK           = PIN_PC0;
+    const uint8_t MISO          = PIN_PC1;
+    const uint8_t MOSI          = PIN_PC2;    
     const uint8_t RADIO_CS      = PIN_PC3;
 }
 
