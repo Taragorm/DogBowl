@@ -57,7 +57,7 @@
 #define HAVE_RADIO 1
 #define USE_POWER_SW 1
 
-#define DB_UNIT 1
+#define DB_UNIT 2
 
 #if DB_UNIT==1
     #define ID_STRING "DBB"
@@ -69,6 +69,7 @@
     #define NODEID DB2_NODEID
     #undef IS_RFM69HW_HCW
     #define IS_RFM69HW_HCW 0
+    #define SWAP_GB 1
 #endif
 
 #define RADIO_TX_POWER 29
@@ -76,15 +77,24 @@
 
 const uint16_t PACKET_SRC_ID = IOT_ID(ID_STRING[0],ID_STRING[1],ID_STRING[2]);
 
+#ifndef SWAP_GB
+#define SWAP_GB 0
+#endif
 
 namespace Pins
 {
     // PA0 is UDPI
     const uint8_t R             = PIN_PB0;
+#if SWAP_GB    
+    const uint8_t G             = PIN_PB4;
+    const uint8_t B             = PIN_PB1;
+#else    
     const uint8_t G             = PIN_PB1;
+    const uint8_t B             = PIN_PB4;
+#endif
+
     const uint8_t TX            = PIN_PB2;
     const uint8_t RX            = PIN_PB3;
-    const uint8_t B             = PIN_PB4;
     const uint8_t RADIO_IRQ     = PIN_PB5;
 
     // A0 UPDI

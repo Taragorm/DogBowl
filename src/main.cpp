@@ -194,10 +194,10 @@ void setup()
 
     //Serial.swap();
     
-    for(int i=0; i<9; ++i)
+    for(int i=0; i<3; ++i)
     {
-        leds(i);
-        delay(100);
+        leds(1<<i);
+        delay(500);
     }
 
     loadcell_.begin();
@@ -230,9 +230,10 @@ void setup()
 #if TEST_SCALE
     digitalWriteFast(Pins::POWER_SW, 1);
     loadcell_.power_up();
+#else
+    wdt_enable(WDT_PERIOD_8KCLK_gc); // 8s - not same codes as basic arduino
 #endif
 
-    wdt_enable(WDT_PERIOD_8KCLK_gc); // 8s - not same codes as basic arduino
 
  }
 //------------------------------------------------------------------------------------------
@@ -260,14 +261,28 @@ void loop()
 #endif
 }
 //------------------------------------------------------------------------------------------
-void pollMaybeSend(bool force, bool log=false)
+void enableScale()
 {
 #if USE_POWER_SW
     digitalWriteFast(Pins::POWER_SW, POWERSW_ON);
     pinState(1);
     loadcell_.begin();
     delay(10);
-#endif
+#endif    
+}
+//------------------------------------------------------------------------------------------
+void disableScale()
+{
+#if USE_POWER_SW
+    delay(10);
+    digitalWriteFast(Pins::POWER_SW, POWERSW_OFF);
+    pinState(0);    
+#endif    
+}
+//------------------------------------------------------------------------------------------
+void pollMaybeSend(bool force, bool log=false)
+{
+    enableScale();
 
     double wt = pollScale(log);
     scaleLow_ = (wt< nvm_.alarm);
@@ -289,12 +304,7 @@ void pollMaybeSend(bool force, bool log=false)
         sendRadio(wt, v, st);
     }
 
-#if USE_POWER_SW
-    delay(10);
-
-    digitalWriteFast(Pins::POWER_SW, POWERSW_OFF);
-    pinState(0);
-#endif
+    disableScale();
 }
 //------------------------------------------------------------------------------------------
 /**
@@ -462,6 +472,7 @@ void awake()
 //------------------------------------------------------------------------------------------
 void doSleep()
 {
+    Serial.println("Sleep");
     digitalWriteFast(Pins::POWER_SW, POWERSW_OFF);
     pinState(0);
     leds(0);
@@ -473,7 +484,8 @@ void doSleep()
 //------------------------------------------------------------------------------------------
 void doWake()
 {
-    digitalWriteFast(Pins::POWER_SW, POWERSW_ON);
+    Serial.println("Wake");
+    digitalWriteFast(Pins::POWER_SW, POWERSW_ON);    
     delay(5);
     asleep_ = false;
     tareCounter_ = 0;
@@ -582,8 +594,19 @@ void zero()
 //------------------------------------------------------------------------------------------
 void tare()
 {
-    Serial.println("Tareing...");
-    loadcell_.tare();    
+    Serial.print("Tare Power on");
+    enableScale();
+    for(;;)
+    {
+        delay(250);
+        if(loadcell_.is_ready())
+            break;
+        Serial.print('.');
+    }
+    wdt_reset();
+    Serial.println("\nTare..");
+    loadcell_.tare(10);    
+    wdt_reset();
     Serial.printf(
                     "Zero= %ld Tare=%ld\r\n", 
                     loadcell_.get_zero(), 
@@ -591,7 +614,10 @@ void tare()
                     );
 
     nvm_.tare = loadcell_.get_tare();
+    Serial.println("Tare put");
     EEPROM.put(EEPROM_ADDR, nvm_);
+    Serial.println("Tare done");
+    disableScale();
 }
 //------------------------------------------------------------------------------------------
 void doCommand()
